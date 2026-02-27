@@ -8,7 +8,9 @@
         text-align: center !important;
         vertical-align: middle !important;
     }
-
+    thead th {
+        white-space: nowrap !important;
+    }
     .chart-card {
         background: #fff;
         border-radius: 12px;
@@ -45,12 +47,27 @@
 
     .dt-buttons {
     }
+
+    button.dt-button.processing,
+    div.dt-button.processing {
+        pointer-events: auto !important;
+        opacity: 1 !important;
+        background: none !important;
+    }
+
+        button.dt-button.processing:after {
+            content: none !important;
+        }
+
+
+
 </style>
 
 <div id="receivedSection" class="container-fluid">
 
     <div class="container bg-white rounded m-2 shadow p-2">
-        <h2 class="text-center text-primary">Received Material Report</h2>
+        <h3 id="reportHeading" class="text-center text-primary"></h3>
+
 
         <!-- Charts -->
         <div class="row mb-4">
@@ -83,8 +100,8 @@
                 </div>
 
                 <!-- Buttons Container
-                                <div id="dtButtonsContainer" class="dt-buttons"></div>
-                -->
+                            <div id="dtButtonsContainer" class="dt-buttons"></div>
+            -->
             </div>
 
             <!-- Right side: Search input -->
@@ -104,7 +121,7 @@
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Item Category</th>
-                    
+
                     <th>Received Qty</th>
                     <th>Warehouse</th>
                     <th>Bin Assigned</th>
@@ -364,6 +381,7 @@
                             return $(node).find('.row-check').prop('checked');
                         },
                         columns: ':visible:not(:first-child)',
+
                         format: {
                             body: function (data, row, column, node) {
                                 if (column === 1) {
@@ -378,6 +396,7 @@
                                 }
                                 return data;
                             }
+
                         }
                     }
                 },
@@ -393,6 +412,20 @@
                         }
                         $.fn.dataTable.ext.buttons.excelHtml5.action.call(this, e, dt, button, config);
                     },
+                    customize: function (xlsx) {
+                        // Access the first sheet
+                        const sheet = xlsx.xl.worksheets['sheet1.xml'];
+
+                        // Find the cell containing the messageTop text (usually in row 2)
+                        $('row c[r^="A2"] t', sheet).each(function () {
+                            // Center align text in that cell
+                            $(this).closest('c').attr('s', '51'); // style 51 = center alignment (built-in style)
+                        });
+
+                        // Optional: make the text bold
+                        $('row c[r^="A2"]', sheet).attr('s', '51');
+                    }
+                    ,
                     exportOptions: {
                         rows: function (idx, data, node) {
                             return $(node).find('.row-check').prop('checked');
@@ -415,6 +448,7 @@
                         }
                     }
                 },
+
 
 
                 {
@@ -476,15 +510,32 @@
             ],
             initComplete: function () {
                 this.api().buttons().container().appendTo('#dtButtonsContainer');
+                //$('#selectAllReceived').off('change').on('change', function () {
+                //    $('#receivedTable tbody input.row-check').prop('checked', $(this).prop('checked'));
+                //});
+
+
+                //// bind select all checkbox
+                //$('#selectAllReceived').off('change').on('change', function () {
+                //    $('#receivedTable tbody input.row-check').prop('checked', $(this).prop('checked'));
+                //});
+
+
                 $('#selectAllReceived').off('change').on('change', function () {
-                    $('#receivedTable tbody input.row-check').prop('checked', $(this).prop('checked'));
+                    const isChecked = $(this).prop('checked');
+                    $('#receivedTable tbody input.row-check').prop('checked', isChecked);
+                });
+
+                $('#receivedTable tbody').off('change', 'input.row-check').on('change', 'input.row-check', function () {
+                    const total = $('#receivedTable tbody input.row-check').length;
+                    const checked = $('#receivedTable tbody input.row-check:checked').length;
+
+                    // If all rows selected → check header checkbox, else uncheck it
+                    $('#selectAllReceived').prop('checked', total === checked);
                 });
 
 
-                // bind select all checkbox
-                $('#selectAllReceived').off('change').on('change', function () {
-                    $('#receivedTable tbody input.row-check').prop('checked', $(this).prop('checked'));
-                });
+
             }
         });
     }
@@ -572,9 +623,10 @@
             });
 
             const chartData = [
-                { name: 'Assigned to Bin', y: assigned, color: '#28a745' },
-                { name: 'Not Assigned to Bin', y: notAssigned, color: '#dc3545' }
+                { name: 'Assigned to Bin', y: assigned, color: '#00bfa6' },   // aqua green
+                { name: 'Not Assigned to Bin', y: notAssigned, color: '#ff6b6b' } // coral red
             ];
+
 
             const binChart = Highcharts.chart('binStatusChart', {
                 chart: { type: 'pie', height: 260 },
@@ -632,9 +684,62 @@
     }
 
     $(document).ready(function () {
+
+        function setReportHeading(fromDate, toDate) {
+
+            if (!fromDate || !toDate) {
+                $('#reportHeading').text("Received Material Report");
+                return;
+            }
+
+            const from = moment(fromDate);
+            const to = moment(toDate);
+
+            // Same month → show only Month Year
+            if (from.format('MM-YYYY') === to.format('MM-YYYY')) {
+                const monthText = from.format("MMMM YYYY");
+                $('#reportHeading').text(`Received Material Report – ${monthText}`);
+                return;
+            }
+
+            // Different range → show From - To
+            const fromText = from.format("DD MMM YYYY");
+            const toText = to.format("DD MMM YYYY");
+
+            $('#reportHeading').text(
+                `Received Material Report – ${fromText} to ${toText}`
+            );
+        }
+
+
         $('#binDetailTable').DataTable(); // still ok to have modal's table ready
-        loadReceivedTable();
-        loadCharts();
+        // 👉 Default: Current Month
+        const startOfMonth = moment().startOf('month');
+        const endOfMonth = moment().endOf('month');
+
+        currentFromDate = startOfMonth;
+        currentToDate = endOfMonth;
+
+        // Load table and charts for current month
+        loadReceivedTable(
+            startOfMonth.format('YYYY-MM-DD'),
+            endOfMonth.format('YYYY-MM-DD')
+        );
+
+        loadCharts(
+            startOfMonth.format('YYYY-MM-DD'),
+            endOfMonth.format('YYYY-MM-DD')
+
+        );
+
+        // Set heading text
+        setReportHeading(startOfMonth, endOfMonth);
+
+        // Show selected month in datepicker input
+        $('#ReceivedDatepicker').val(
+            startOfMonth.format('DD-MM-YYYY') + ' - ' + endOfMonth.format('DD-MM-YYYY')
+        );
+
 
         $('#ReceivedDatepicker').daterangepicker({
             autoUpdateInput: false,
@@ -667,9 +772,13 @@
 
             // reload charts using the selected date range
             loadCharts(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'));
+            setReportHeading(start, end);
+
         });
 
         $('#ReceivedDatepicker').on('cancel.daterangepicker', function () {
+            setReportHeading(null, null);
+
             $(this).val('');
             currentFromDate = null;
             currentToDate = null;
